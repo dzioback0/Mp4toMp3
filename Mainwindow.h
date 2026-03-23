@@ -26,6 +26,8 @@ private:
     void setupUi();
     void addFileIfValid(const QString &filePath);
     bool isMp4File(const QString &filePath) const;
+    QString ffmpegPath() const;
+    QString outputMp3Path(const QString &inputPath) const;
 
     QLabel *titleLabel{};
     QLabel *dropLabel{};
