@@ -1,12 +1,10 @@
 #include <QApplication>
-#include <QWidget>
+#include "MainWindow.h"
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
-    QWidget window;
-    window.setWindowTitle("MP4 to MP3 Converter");
-    window.resize(400, 300);
+    MainWindow window;
     window.show();
 
     return app.exec();
