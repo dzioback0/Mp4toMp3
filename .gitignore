@@ -39,3 +39,14 @@
 
 # debug information files
 *.dwo
+
+# CMake build folders
+cmake-build-*/
+build/
+
+# CLion
+.idea/
+
+# Qt deploy stuff
+*.qm
+*.qrc.depends
