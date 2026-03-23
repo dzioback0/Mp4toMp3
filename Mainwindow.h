@@ -3,8 +3,9 @@
 #include <QWidget>
 
 class QLabel;
-class QListWidget;
+class QTableWidget;
 class QPushButton;
+class QComboBox;
 class QDragEnterEvent;
 class QDropEvent;
 
@@ -16,6 +17,7 @@ public:
 
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
 
 private slots:
@@ -26,12 +28,18 @@ private:
     void setupUi();
     void addFileIfValid(const QString &filePath);
     bool isMp4File(const QString &filePath) const;
+
     QString ffmpegPath() const;
-    QString outputMp3Path(const QString &inputPath) const;
+    QString outputFilePath(const QString &inputPath) const;
+
+    void updateEstimatedSize(int row);
+    QString formatSize(double bytes) const;
 
     QLabel *titleLabel{};
     QLabel *dropLabel{};
-    QListWidget *fileList{};
+    QTableWidget *table{};
     QPushButton *convertButton{};
     QPushButton *clearButton{};
+    QComboBox *formatBox{};
+    QComboBox *bitrateBox{};
 };
