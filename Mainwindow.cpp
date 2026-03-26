@@ -59,7 +59,7 @@ void MainWindow::setupUi() {
     table->setHorizontalHeaderLabels({"","File", "Format", "Bitrate", "Estimated Size", "Status"});
     table->horizontalHeader()->setStretchLastSection(true);
     table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-    table->setColumnWidth(0,30);
+    table->setColumnWidth(0,50);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
     convertButton = new QPushButton("Convert", this);
@@ -217,7 +217,7 @@ QString MainWindow::outputFilePath(const QString &inputPath) const {
 }
 
 double MainWindow::getVideoDuration(const QString &filePath){
-    const QString ffprobe = ffprobePath();  // Путь к ffprobe
+    const QString ffprobe = ffprobePath();
     if (!QFileInfo::exists(ffprobe)){
         return -1;
     }
@@ -231,16 +231,16 @@ double MainWindow::getVideoDuration(const QString &filePath){
 
     process.start(ffprobe, args);
     if (!process.waitForStarted() || !process.waitForFinished()) {
-        return -1;  // Ошибка при выполнении
+        return -1;
     }
 
     const QString output = process.readAllStandardOutput().trimmed();
-    bool ok = 0;
+    bool ok;
     const double duration = output.toDouble(&ok);
-    if (!ok) {
-        return -1;
+    if (ok) {
+        return duration;
     }
-    return duration;
+    return -1;
 }
 
 QString MainWindow::formatSize(double bytes) const {
@@ -252,10 +252,10 @@ QString MainWindow::calculateMp3Size(double durationSeconds, int bitrate) const 
     if (durationSeconds < 0 || bitrate <= 0) {
         return "Error";
     }
-    // Формула для расчёта размера MP3 файла (в байтах)
+
     const double sizeBytes = (durationSeconds * bitrate * 1000.0) / 8.0;
-    const double sizeMb = sizeBytes / (1024.0 * 1024.0);  // Преобразуем в МБ
-    return QString("~%1 MB").arg(sizeMb, 0, 'f', 2);  // Форматируем результат
+    const double sizeMb = sizeBytes / (1024.0 * 1024.0);
+    return QString("%1 MB").arg(sizeMb, 0, 'f', 2);
 }
 
 void MainWindow::updateEstimatedSize(int row) {
@@ -273,7 +273,7 @@ void MainWindow::updateEstimatedSize(int row) {
         const int bitrate = table->item(row, 3)->text().toInt();
         table->item(row, 4)->setText(calculateMp3Size(durationSeconds, bitrate));
     } else if (format == "FLAC") {
-        // только приблизительная оценка
+
         const double estimatedFlacBytes = durationSeconds * 44100.0 * 2.0 * 2.0 * 0.6;
         table->item(row, 4)->setText(formatSize(estimatedFlacBytes));
     } else {
