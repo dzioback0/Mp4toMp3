@@ -22,7 +22,7 @@ protected:
 
 private slots:
     void onConvertClicked();
-    void onClearClicked();
+    void onClearClicked() ;
 
 private:
     void setupUi();
@@ -30,7 +30,11 @@ private:
     bool isMp4File(const QString &filePath) const;
 
     QString ffmpegPath() const;
+    QString ffprobePath() const;
     QString outputFilePath(const QString &inputPath) const;
+
+    QString calculateMp3Size(double durationSeconds, int bitrate) const;
+    double getVideoDuration(const QString &filePath);
 
     void updateEstimatedSize(int row);
     QString formatSize(double bytes) const;

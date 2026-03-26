@@ -1,13 +1,10 @@
 #include "MainWindow.h"
-
 #include <QApplication>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDir>
-#include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileInfo>
-#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QMessageBox>
@@ -35,7 +32,7 @@ void MainWindow::setupUi() {
 
     dropLabel = new QLabel("Drop here MP4 files", this);
     dropLabel->setAlignment(Qt::AlignCenter);
-    dropLabel->setMinimumHeight(100);
+    dropLabel->setMinimumHeight(200);
     dropLabel->setStyleSheet(
         "border: 2px dashed #777;"
         "border-radius: 12px;"
@@ -58,10 +55,12 @@ void MainWindow::setupUi() {
     topLayout->addStretch();
 
     table = new QTableWidget(this);
-    table->setColumnCount(5);
-    table->setHorizontalHeaderLabels({"File", "Format", "Bitrate", "Estimated Size", "Status"});
+    table->setColumnCount(6);
+    table->setHorizontalHeaderLabels({"","File", "Format", "Bitrate", "Estimated Size", "Status"});
     table->horizontalHeader()->setStretchLastSection(true);
-    table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    table->setColumnWidth(0,30);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
     convertButton = new QPushButton("Convert", this);
     clearButton = new QPushButton("Clear", this);
@@ -84,8 +83,8 @@ void MainWindow::setupUi() {
         bitrateBox->setEnabled(isMp3);
 
         for (int i = 0; i < table->rowCount(); ++i) {
-            table->item(i, 1)->setText(formatBox->currentText());
-            table->item(i, 2)->setText(isMp3 ? bitrateBox->currentText() : "-");
+            table->item(i, 2)->setText(formatBox->currentText());
+            table->item(i, 3)->setText(isMp3 ? bitrateBox->currentText() : "-");
             updateEstimatedSize(i);
         }
     });
@@ -96,7 +95,7 @@ void MainWindow::setupUi() {
         }
 
         for (int i = 0; i < table->rowCount(); ++i) {
-            table->item(i, 2)->setText(bitrateBox->currentText());
+            table->item(i, 3)->setText(bitrateBox->currentText());
             updateEstimatedSize(i);
         }
     });
@@ -143,7 +142,7 @@ void MainWindow::addFileIfValid(const QString &filePath) {
     }
 
     for (int i = 0; i < table->rowCount(); ++i) {
-        if (table->item(i, 0)->text() == filePath) {
+        if (table->item(i, 1)->text() == filePath) {
             return;
         }
     }
@@ -154,27 +153,55 @@ void MainWindow::addFileIfValid(const QString &filePath) {
     const QString currentFormat = formatBox->currentText();
     const QString currentBitrate = (currentFormat == "MP3") ? bitrateBox->currentText() : "-";
 
-    table->setItem(row, 0, new QTableWidgetItem(filePath));
-    table->setItem(row, 1, new QTableWidgetItem(currentFormat));
-    table->setItem(row, 2, new QTableWidgetItem(currentBitrate));
-    table->setItem(row, 3, new QTableWidgetItem("calculating..."));
-    table->setItem(row, 4, new QTableWidgetItem("waiting"));
+    auto* checkItem = new QTableWidgetItem();
+    checkItem->setCheckState(Qt::Unchecked);
+    checkItem->setFlags(Qt::ItemIsUserCheckable | Qt::ItemIsEnabled);
+    checkItem->setTextAlignment(Qt::AlignCenter);
+    table->setItem(row, 0, checkItem);
+
+    table->setItem(row, 1, new QTableWidgetItem(filePath));
+    table->setItem(row, 2, new QTableWidgetItem(currentFormat));
+    table->setItem(row, 3, new QTableWidgetItem(currentBitrate));
+    table->setItem(row, 4, new QTableWidgetItem("calculating..."));
+    table->setItem(row, 5, new QTableWidgetItem("waiting"));
 
     updateEstimatedSize(row);
 }
 
-bool MainWindow::isMp4File(const QString &filePath) const {
+ bool MainWindow::isMp4File(const QString &filePath) const{
     QFileInfo info(filePath);
     return info.exists() && info.isFile() &&
            info.suffix().compare("mp4", Qt::CaseInsensitive) == 0;
 }
 
 QString MainWindow::ffmpegPath() const {
-    const QString appDir = QCoreApplication::applicationDirPath();
-    QDir dir(appDir);
+    QDir dir(QCoreApplication::applicationDirPath());
+
+    QString candidate = dir.filePath("ffmpeg/bin/ffmpeg.exe");
+    if (QFileInfo::exists(candidate)) {
+        return candidate;
+    }
 
     if (dir.cdUp()) {
-        const QString candidate = dir.filePath("ffmpeg/bin/ffmpeg.exe");
+        candidate = dir.filePath("ffmpeg/bin/ffmpeg.exe");
+        if (QFileInfo::exists(candidate)) {
+            return candidate;
+        }
+    }
+
+    return {};
+}
+
+QString MainWindow::ffprobePath() const {
+    QDir dir(QCoreApplication::applicationDirPath());
+
+    QString candidate = dir.filePath("ffmpeg/bin/ffprobe.exe");
+    if (QFileInfo::exists(candidate)) {
+        return candidate;
+    }
+
+    if (dir.cdUp()) {
+        candidate = dir.filePath("ffmpeg/bin/ffprobe.exe");
         if (QFileInfo::exists(candidate)) {
             return candidate;
         }
@@ -186,7 +213,34 @@ QString MainWindow::ffmpegPath() const {
 QString MainWindow::outputFilePath(const QString &inputPath) const {
     QFileInfo info(inputPath);
     const QString format = formatBox->currentText().toLower();
-    return info.path() + "/" + info.completeBaseName() + "." + format;
+    return info.path() + QDir::separator() + info.completeBaseName() + "." + format;
+}
+
+double MainWindow::getVideoDuration(const QString &filePath){
+    const QString ffprobe = ffprobePath();  // Путь к ffprobe
+    if (!QFileInfo::exists(ffprobe)){
+        return -1;
+    }
+
+    QProcess process;
+    QStringList args;
+    args << "-v" << "error"
+         << "-show_entries" << "format=duration"
+         << "-of" << "default=noprint_wrappers=1:nokey=1"
+         << filePath;
+
+    process.start(ffprobe, args);
+    if (!process.waitForStarted() || !process.waitForFinished()) {
+        return -1;  // Ошибка при выполнении
+    }
+
+    const QString output = process.readAllStandardOutput().trimmed();
+    bool ok = 0;
+    const double duration = output.toDouble(&ok);
+    if (!ok) {
+        return -1;
+    }
+    return duration;
 }
 
 QString MainWindow::formatSize(double bytes) const {
@@ -194,36 +248,52 @@ QString MainWindow::formatSize(double bytes) const {
     return QString("~%1 MB").arg(mb, 0, 'f', 2);
 }
 
-void MainWindow::updateEstimatedSize(int row) {
-    const QString format = table->item(row, 1)->text();
+QString MainWindow::calculateMp3Size(double durationSeconds, int bitrate) const {
+    if (durationSeconds < 0 || bitrate <= 0) {
+        return "Error";
+    }
+    // Формула для расчёта размера MP3 файла (в байтах)
+    const double sizeBytes = (durationSeconds * bitrate * 1000.0) / 8.0;
+    const double sizeMb = sizeBytes / (1024.0 * 1024.0);  // Преобразуем в МБ
+    return QString("~%1 MB").arg(sizeMb, 0, 'f', 2);  // Форматируем результат
+}
 
-    // Пока временно используем фиксированную длительность 180 сек.
-    // Потом заменим на реальную через ffprobe.
-    const double durationSeconds = 180.0;
+void MainWindow::updateEstimatedSize(int row) {
+    const QString inputFile = table->item(row, 1)->text();
+    const QString format = table->item(row, 2)->text();
+
+
+    const double durationSeconds = getVideoDuration(inputFile);
+    if (durationSeconds < 0) {
+        table->item(row, 4)->setText("Error");
+        return;
+    }
 
     if (format == "MP3") {
-        const int bitrate = table->item(row, 2)->text().toInt();
-        const double sizeBytes = durationSeconds * bitrate * 1000.0 / 8.0;
-        table->item(row, 3)->setText(formatSize(sizeBytes));
-    } else {
-        // Очень грубая оценка для FLAC
+        const int bitrate = table->item(row, 3)->text().toInt();
+        table->item(row, 4)->setText(calculateMp3Size(durationSeconds, bitrate));
+    } else if (format == "FLAC") {
+        // только приблизительная оценка
         const double estimatedFlacBytes = durationSeconds * 44100.0 * 2.0 * 2.0 * 0.6;
-        table->item(row, 3)->setText(formatSize(estimatedFlacBytes));
+        table->item(row, 4)->setText(formatSize(estimatedFlacBytes));
+    } else {
+        table->item(row, 4)->setText("Error");
     }
 }
 
 void MainWindow::onConvertClicked() {
     if (table->rowCount() == 0) {
-        QMessageBox::information(this, "Info", "Сначала добавь хотя бы один MP4 файл.");
+        QMessageBox::information(this, "Info", "Please add at least one MP4 file.");
         return;
     }
 
     const QString ffmpeg = ffmpegPath();
-    if (ffmpeg.isEmpty()) {
-        QMessageBox::critical(this, "FFmpeg not found",
-                              "Не найден ffmpeg.exe\n\n"
-                              "Ожидаемый путь:\n"
-                              "../ffmpeg/bin/ffmpeg.exe относительно папки с exe.");
+    if (!QFileInfo::exists(ffmpeg)) {
+        QMessageBox::critical(this, "ffmpeg not found",
+                              "ffmpeg.exe not found\n\n"
+                              "Expected path:\n"
+                              "../ffmpeg/bin/ffmpeg.exe relative to the exe folder.");
+
         return;
     }
 
@@ -235,12 +305,12 @@ void MainWindow::onConvertClicked() {
     QList<int> rowsToRemove;
 
     for (int i = 0; i < table->rowCount(); ++i) {
-        const QString inputFile = table->item(i, 0)->text();
-        const QString format = table->item(i, 1)->text();
-        const QString bitrate = table->item(i, 2)->text();
+        const QString inputFile = table->item(i, 1)->text();
+        const QString format = table->item(i, 2)->text();
+        const QString bitrate = table->item(i, 3)->text();
         const QString outputFile = outputFilePath(inputFile);
 
-        table->item(i, 4)->setText("converting...");
+        table->item(i, 5)->setText("converting...");
         QApplication::processEvents();
 
         QProcess process;
@@ -260,11 +330,11 @@ void MainWindow::onConvertClicked() {
         const bool finished = process.waitForStarted() && process.waitForFinished(-1);
 
         if (finished && process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0) {
-            table->item(i, 4)->setText("done");
+            table->item(i, 5)->setText("done");
             ++successCount;
             rowsToRemove.append(i);
         } else {
-            table->item(i, 4)->setText("error");
+            table->item(i, 5)->setText("error");
             failedFiles << QFileInfo(inputFile).fileName();
         }
     }
@@ -278,10 +348,10 @@ void MainWindow::onConvertClicked() {
 
     if (failedFiles.isEmpty()) {
         QMessageBox::information(this, "Done",
-                                 QString("Готово. Сконвертировано файлов: %1").arg(successCount));
+                                 QString("Done. Converted files: %1").arg(successCount));
     } else {
         QMessageBox::warning(this, "Finished with errors",
-                             QString("Успешно: %1\nС ошибкой: %2\n\n%3")
+                             QString("Success: %1\nFailed: %2\n\n%3")
                                  .arg(successCount)
                                  .arg(failedFiles.size())
                                  .arg(failedFiles.join("\n")));
@@ -289,5 +359,39 @@ void MainWindow::onConvertClicked() {
 }
 
 void MainWindow::onClearClicked() {
-    table->setRowCount(0);
+    QList<int> checkedRows;
+
+    for (int i = 0; i < table->rowCount(); ++i) {
+        if (table->item(i, 0)->checkState() == Qt::Checked) {
+            checkedRows.append(i);
+        }
+    }
+
+    if (checkedRows.isEmpty()) {
+        table->setRowCount(0);
+        return;
+    }
+
+    QMessageBox msgBox;
+    msgBox.setWindowTitle("Delete options");
+    msgBox.setText("What do you want to delete?");
+
+    QPushButton* deleteChosen = msgBox.addButton("Delete chosen files", QMessageBox::AcceptRole);
+    QPushButton* deleteOthers = msgBox.addButton("Delete others (keep chosen)", QMessageBox::DestructiveRole);
+    msgBox.addButton("Cancel", QMessageBox::RejectRole);
+
+    msgBox.exec();
+
+    if (msgBox.clickedButton() == deleteChosen) {
+        for (int i = checkedRows.size() - 1; i >= 0; --i) {
+            table->removeRow(checkedRows[i]);
+        }
+    }
+    else if (msgBox.clickedButton() == deleteOthers) {
+        for (int i = table->rowCount() - 1; i >= 0; --i) {
+            if (table->item(i, 0)->checkState() != Qt::Checked) {
+                table->removeRow(i);
+            }
+        }
+    }
 }
